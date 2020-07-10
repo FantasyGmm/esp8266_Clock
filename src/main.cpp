@@ -315,7 +315,6 @@ void getNtpTime()
 }
 bool getLocalTime()
 {
-  uint32_t count = 3000 / 10;
   time_t now;
   time(&now);
   localtime_r(&now, &localTime);

@@ -12,6 +12,18 @@
 #include <time.h>
 #include <DNSServer.h>
 
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
+ESP8266WebServer server(80);
+DNSServer  dnsServer;
+unsigned long otime = 0;
+unsigned long dtime = 0;
+struct tm localTime;
+bool bNeedUpdate = false;
+bool  bNeedinit = true;
+struct WifiData
+{
+    String ssid;
+};
 /*
 //I2C
      OLED  ---  ESP8266
@@ -20,22 +32,6 @@
      SCL   ---  D1(GPIO5)
      SDA   ---  D2(GPIO4)
 */
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
-bool needupdate;
-void httpServer()
-{
-  ESP8266WebServer server(80);
-}
-void handleRoot(){
-
-}
-void  handleNotFound(){
-
-}
-void drawStr(u8g2_uint_t x,u8g2_uint_t y,const char *text)
-{
-  u8g2.drawStr(x,y,text);
-}
 void  drawXBM(uint8_t width, uint8_t height, uint8_t *bmp)
 {
   u8g2.setDrawColor(0);
@@ -44,6 +40,7 @@ void  drawXBM(uint8_t width, uint8_t height, uint8_t *bmp)
   u8g2.drawXBM(0, 0, width, height, bmp);
   u8g2.sendBuffer();
 }
+
 void drawProgress(int progress, String caption)
 {
   u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
@@ -56,7 +53,57 @@ void drawProgress(int progress, String caption)
     u8g2.drawBox(12, 26, progress, 19);
 
   } while(u8g2.nextPage());
-};
+}
+bool readConfig(String path, String key, char* value)
+{
+  File configFile = LittleFS.open(path, "r");
+  if (!configFile)
+    return false; 
+  String json = configFile.readString();
+  JSONVar jo = JSON.parse(json);
+  configFile.close();
+  if (JSON.typeof(jo) == "undefined")
+  {
+    return false;
+  }
+  if (!jo.hasOwnProperty(key))
+  {
+    Serial.printf("Failed to Read Config Key:%s", key.c_str());
+    return false;
+  }
+  strcpy(value, jo[key]);
+  return true;
+}
+bool getJson(String path, char* buf)
+{
+  File configFile = LittleFS.open(path, "r");
+  if (!configFile)
+    return false;
+  strcpy(buf, configFile.readString().c_str());
+  configFile.close();
+  return true;
+}
+bool writeConfig(String path, String key, String value)
+{
+  JSONVar jo;
+  File configFile;
+  if (LittleFS.exists(path))
+  {
+    configFile = LittleFS.open(path, "r+");
+    String json = configFile.readString();
+    jo = JSON.parse(json);
+  }
+  else
+  {
+    configFile = LittleFS.open(path, "w+");
+  }
+  jo[key] = value;
+  configFile.seek(0);
+  String json = JSON.stringify(jo);
+  configFile.write(json.c_str());
+  configFile.close();
+  return true;
+}
 void initdAP()
 {
   IPAddress  APip(192,168,1,1);
@@ -65,12 +112,267 @@ void initdAP()
   WiFi.softAPConfig(APip,APip,Subnet);
   String APname = ("ESP8266_"+(String)ESP.getChipId());
   WiFi.softAP(APname.c_str());
-  u8g2.firstPage();
-  do{
+  dnsServer.start(53,"*",APip);
+  u8g2.clearBuffer();
+  u8g2.setDrawColor(1);
   u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
-    drawStr(0,20,APname.c_str());
-  }while (u8g2.nextPage());
+  u8g2.drawUTF8(0,12,"请链接热点来配置WiFi");
+  u8g2.drawStr(0,26,"SSID: ");
+  u8g2.drawStr(30,26,APname.c_str());
+  u8g2.drawUTF8(0,40,"地址栏输入下面IP来配网");
+  u8g2.drawStr(0,56,"192.168.1.1");
+  u8g2.sendBuffer();
 }
+
+int scanWiFi(WifiData* wdata, int len)
+{
+  int n = WiFi.scanNetworks();
+  if (n > 0)
+  {
+    len = n > len ? len : n; 
+    for (int i = 0; i < len; i++)
+    {
+      wdata[i].ssid = WiFi.SSID(i);
+    }
+  }
+  return len;
+}
+
+void connectWiFi(String wifi_ssid,String wifi_pw)
+{
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(wifi_ssid, wifi_pw);
+  int timeout = 0;
+  while (WiFi.status() != WL_CONNECTED) 
+  {
+    delay(500);
+    if (timeout > 20)
+    {
+      WiFi.disconnect(false);
+      initdAP();
+      break;
+    }
+    timeout++;
+  }
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
+    u8g2.clearBuffer();
+    u8g2.drawUTF8(0,12,"WiFi Connected");
+    u8g2.sendBuffer();
+    delay(1000);
+  }
+}
+
+void handleinit()
+{
+server.send(200,"text/html",initPage);
+}
+
+void  handleRoot()
+{
+  if (bNeedinit)
+  {
+    handleinit();
+  }
+  else
+  {
+    server.send(200,"text/html",indexPage);
+  }
+}
+void handleAPI()
+{
+  if (server.hasArg("scan_wifi"))
+  {
+    WifiData* wdata = new WifiData[15];
+    int n = scanWiFi(wdata, 15);
+    if (n <= 0)
+    {
+      server.send(200, "application/json", "{\"code\":1,\"msg\":\"No WiFi Detected!\"}");
+      return;
+    }
+    JSONVar jo;
+    jo["code"] = 0;
+    jo["msg"] = "Scan Completed!";
+    JSONVar ja;
+    for(int i = 0; i < n; i++)
+    {
+      JSONVar ji;
+      ji["ssid"] = (wdata + i)->ssid;
+      ja[i] = ji;
+    }
+    jo["data"] = ja;
+    String json;
+    json = JSON.stringify(jo);
+    server.send(200, "application/json", json.c_str());
+    delete[] wdata;
+  }
+  else if (server.hasArg("get_config"))
+  {
+    char* buf = new char[512];
+    if (!getJson("/config.json", buf))
+    {
+      server.send(200, "application/json", "{\"code\":1,\"msg\":\"get config error!\"}");
+      return;
+    }  
+    JSONVar jo;
+    JSONVar jd = JSON.parse(buf);
+    jo["code"] = 0;
+    jo["msg"] = "OK";
+    jo["data"] = jd;
+    server.send(200, "application/json", JSON.stringify(jo));
+    delete[] buf;
+  }
+  else
+    server.send(405, "text/html", "Method Not Allowed");
+}
+
+void handleForm()
+{
+  if (server.method() != HTTP_POST)
+  {
+    server.send(405, "text/html", "Method Not Allowed");
+  }else
+  {
+    const String method =  server.arg("method");
+    if (method == "init_config")
+    {
+      if (!server.hasArg("wifi_ssid") || !server.hasArg("wifi_password"))
+        server.send(405, "text/html", "Method Not Allowed");
+
+      if (!(writeConfig("/config.json", "wifi_ssid", server.arg("wifi_ssid")) && writeConfig("/config.json", "wifi_password", server.arg("wifi_password"))))
+      {
+        server.send(200, "application/json", "{\"code\":1,\"msg\":\"Write Config Error!\"}");
+        return;
+      }
+      server.send(200, "application/json", "{\"code\":0,\"msg\":\"Config Saved, Esp8266 Will Be Restart!\"}");
+      delay(500);
+      ESP.restart();
+    }else if (method == "save_config")
+    {
+      if (!server.hasArg("wifi_ssid") || !server.hasArg("wifi_password") || !server.hasArg("weather_appid") || !server.hasArg("weather_appsecret"))
+        server.send(405, "text/html", "Method Not Allowed");
+
+      if (server.hasArg("weather_city"))
+      {
+        writeConfig("/config.json", "weather_city", server.arg("weather_city"));
+      }
+      if (!(writeConfig("/config.json", "wifi_ssid", server.arg("wifi_ssid")) && writeConfig("/config.json", "wifi_password", server.arg("wifi_password")) && writeConfig("/config.json", "weather_appid", server.arg("weather_appid")) && writeConfig("/config.json", "weather_appsecret", server.arg("weather_appsecret"))))
+      {
+        server.send(200, "application/json", "{\"code\":1,\"msg\":\"Write Config Error!\"}");
+        return;
+      }
+      server.send(200, "application/json", "{\"code\":0,\"msg\":\"Config Saved, Esp8266 Will Be Restart!\"}");
+      delay(1000);
+      ESP.restart();
+    }else if (method == "reboot")
+    {
+      server.send(200, "application/json", "{\"code\":0,\"msg\":\"Esp8266 Will Be Restart!\"}");
+      delay(1000);
+      ESP.restart();
+    }else if (method == "reset")
+    {
+      LittleFS.format();
+      server.send(200, "application/json", "{\"code\":0,\"msg\":\"Format Completed, Esp8266 Will Be Restart!\"}");
+      delay(1000);
+      ESP.restart();
+    }else
+    {
+      server.send(405, "text/html", "Method Not Allowed");
+    }
+  }
+}
+
+void handleNotFound() 
+{
+  if (bNeedinit)
+  {
+    handleinit();
+    return;
+  }
+  String message = "File Not Found\n\n";
+  message += "URI: ";
+  message += server.uri();
+  message += "\nMethod: ";
+  message += (server.method() == HTTP_GET) ? "GET" : "POST";
+  message += "\nArguments: ";
+  message += server.args();
+  message += "\n";
+  for (uint8_t i = 0; i < server.args(); i++)
+  {
+    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+  }
+  server.send(404, "text/html", message);
+}
+
+void getNtpTime()
+{
+  long timezone = 8;
+  byte daysavetime = 0;
+  configTime(3600 * timezone, daysavetime * 3600, "ntp.aliyun.com", "time1.cloud.tencent.com");
+}
+bool getLocalTime()
+{
+  uint32_t count = 3000 / 10;
+  time_t now;
+  time(&now);
+  localtime_r(&now, &localTime);
+  if (localTime.tm_year > (2016 - 1900))
+  {
+    return true;
+  }
+  return false;
+}
+
+void drawWatch()
+{
+  u8g2.firstPage();
+  u8g2.setDrawColor(1);
+  u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+  do{
+    char *nowdate = new char[32];
+    char *nowtime = new char[32];
+     //获取时间
+    sprintf(nowdate, "%d-%02d-%02d", localTime.tm_year + 1900, localTime.tm_mon + 1, localTime.tm_mday);
+    sprintf(nowtime, " %02d:%02d:%02d", localTime.tm_hour, localTime.tm_min, localTime.tm_sec);
+    switch(localTime.tm_wday)
+    {
+      case 0:
+        u8g2.drawUTF8(74, 14, "星期日");
+      break;
+      case 1:
+        u8g2.drawUTF8(74, 14, "星期一");
+      break;
+      case 2:
+        u8g2.drawUTF8(74, 14, "星期二");
+      break;
+      case 3:
+        u8g2.drawUTF8(74, 14, "星期三");
+      break;
+      case 4:
+        u8g2.drawUTF8(74, 14, "星期四");
+      break;
+      case 5:
+        u8g2.drawUTF8(74, 14, "星期五");
+      break;
+      case 6:
+        u8g2.drawUTF8(74, 14, "星期六");
+      break;
+    }
+    //日期
+    u8g2.drawUTF8(0, 14, nowdate);
+    //时间
+    u8g2.setFont(u8g2_font_fub20_tn);
+    u8g2.drawStr(-5, 50, nowtime);
+    u8g2.sendBuffer();
+    //释放资源
+    delete[] nowdate;
+    delete[] nowtime;
+  }while(u8g2.nextPage());
+}
+
 void update_started()
 {
   Serial.println("CALLBACK:  HTTP update process started");
@@ -99,16 +401,14 @@ void httpOTA(IPAddress updateAddr)
     ESPhttpUpdate.onProgress(update_progress);
     ESPhttpUpdate.onError(update_error);
     t_httpUpdate_return ret = ESPhttpUpdate.update("http://" + updateAddr.toString() + ":8266");
-        switch (ret) 
+    switch (ret) 
     {
       case HTTP_UPDATE_FAILED:
         Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
         break;
-
       case HTTP_UPDATE_NO_UPDATES:
         Serial.println("HTTP_UPDATE_NO_UPDATES");
         break;
-
       case HTTP_UPDATE_OK:
         Serial.println("HTTP_UPDATE_OK");
         break;
@@ -117,16 +417,53 @@ void httpOTA(IPAddress updateAddr)
 void setup() {
   Serial.begin(115200);
   u8g2.begin();
-  u8g2.initDisplay();
-  u8g2.clearBuffer();
   u8g2.enableUTF8Print();
-  initdAP();
+  LittleFS.begin();
+  char wifi_ssid[32],wifi_pw[16];
+  bool bssid = readConfig("/config.json", "wifi_ssid", wifi_ssid);
+  bool bpass = readConfig("/config.json", "wifi_password", wifi_pw);
+  bNeedinit = !(bssid && bpass);
+  if(bNeedinit)
+  {
+    initdAP();
+  }else
+  {
+    connectWiFi(wifi_ssid,wifi_pw);
+  }
+  localTime.tm_year = 0;
+  getNtpTime();
+  server.on("/", handleRoot);  
+  server.on("/init",handleinit);
+  server.on("/api",handleAPI);
+  server.on("/form",handleForm);
+  server.onNotFound(handleNotFound);
+  server.begin();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  while (needupdate)
+  if (localTime.tm_year < (2016 - 1900) && !bNeedinit)
+  {
+    if (millis() - otime > 5000)
+    {
+      otime = millis();
+      getNtpTime();
+    }
+  }
+  if (bNeedinit)
+    dnsServer.processNextRequest();
+  server.handleClient();
+  while (bNeedUpdate)
   {
     //httpOTA();
   }
+    if (millis() - dtime > 1000)
+  {
+    dtime = millis();
+    getLocalTime();
+  }
+  if (!bNeedinit)
+  {
+    drawWatch();
+  }
+  delay(1);
 }

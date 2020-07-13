@@ -14,17 +14,29 @@
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 ESP8266WebServer server(80);
-DNSServer  dnsServer;
+DNSServer dnsServer;
 WiFiUDP udp_server;
 int screen_sleep = 0;
 unsigned long otime = 0;
 unsigned long dtime = 0;
 struct tm localTime;
 bool bNeedUpdate = false;
-bool  bNeedinit = true;
+bool bNeedinit = true;
 struct WifiData
 {
     String ssid;
+};
+struct Weather
+{
+  ulong time;
+  char city[20];
+  char wea[20];
+  char tem[4];
+  Weather()
+  {
+    this->time = 0;
+  }
+
 };
 /*
 //I2C
@@ -307,6 +319,63 @@ void handleNotFound()
   server.send(404, "text/html", message);
 }
 
+void getWeather()
+{
+  char appid[16];
+  char appsecret[16];
+  char city[16];
+  char weatherUrl[128];
+  WiFiClient client;
+  HTTPClient http;
+  String json = "";
+  Weather weather;
+  if (!(readConfig("/config.json", "weather_appid", appid) && readConfig("/config.json", "weather_appsecret", appsecret)))
+  {
+    Serial.println("Weather read config error!");
+    return;
+  }
+  readConfig("/config.json", "weather_city", city);
+  if(strlen(city) > 0)
+    sprintf(weatherUrl, "http://tianqiapi.com/api?version=v6&appid=%s&appsecret=%s&city=%s", appid, appsecret, city);
+  else
+    sprintf(weatherUrl, "http://tianqiapi.com/api?version=v6&appid=%s&appsecret=%s", appid, appsecret);
+  Serial.print("[HTTP] begin...\n");
+    if (http.begin(client, weatherUrl)) 
+    {
+      Serial.print("[HTTP] GET...\n");
+      int httpCode = http.GET();
+      if (httpCode > 0)
+      {
+        Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+        if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
+        {
+          json = http.getString();
+          JSONVar jo = JSON.parse(json);
+          if (JSON.typeof(jo) != "undefined")
+          {
+            if (jo.hasOwnProperty("errcode"))
+              return;
+            if (jo["city"] == null || jo["wea"] == null || jo["tem"] == null)
+              return;
+            strcpy(weather.city, jo["city"]);
+            strcpy(weather.wea, jo["wea"]);
+            strcpy(weather.tem, jo["tem"]);
+            weather.time = millis();
+          }
+        }
+      }
+      else
+      {
+        Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      }
+      http.end();
+    } 
+    else 
+    {
+      Serial.printf("[HTTP} Unable to connect\n");
+    }
+}
+
 void getNtpTime()
 {
   long timezone = 8;
@@ -325,10 +394,18 @@ bool getLocalTime()
   return false;
 }
 
+void drawWeather()
+{
+  u8g2.firstPage();
+  u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+  do{
+    
+  }while (u8g2.nextPage());
+}
+
 void drawWatch()
 {
   u8g2.firstPage();
-  u8g2.setDrawColor(1);
   u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
   do{
     char *nowdate = new char[32];
@@ -526,5 +603,6 @@ void loop() {
     udpServer();
     drawWatch();
   }
+  getWeather();
   delay(1);
 }

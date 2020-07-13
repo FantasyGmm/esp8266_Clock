@@ -1,9 +1,9 @@
 #include <Arduino.h>
-#include<U8g2lib.h>
-#include<ESP8266WiFi.h>
-#include<WiFiClient.h>
-#include<ESP8266WebServer.h>
-#include<html.h>
+#include <U8g2lib.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <html.h>
 #include <Arduino_JSON.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
@@ -15,6 +15,8 @@
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 ESP8266WebServer server(80);
 DNSServer  dnsServer;
+WiFiUDP udp_server;
+int screen_sleep = 0;
 unsigned long otime = 0;
 unsigned long dtime = 0;
 struct tm localTime;
@@ -113,15 +115,6 @@ void initdAP()
   String APname = ("ESP8266_"+(String)ESP.getChipId());
   WiFi.softAP(APname.c_str());
   dnsServer.start(53,"*",APip);
-  u8g2.clearBuffer();
-  u8g2.setDrawColor(1);
-  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
-  u8g2.drawUTF8(0,12,"请链接热点来配置WiFi");
-  u8g2.drawStr(0,26,"SSID: ");
-  u8g2.drawStr(30,26,APname.c_str());
-  u8g2.drawUTF8(0,40,"地址栏输入下面IP来配网");
-  u8g2.drawStr(0,56,"192.168.1.1");
-  u8g2.sendBuffer();
 }
 
 int scanWiFi(WifiData* wdata, int len)
@@ -154,15 +147,6 @@ void connectWiFi(String wifi_ssid,String wifi_pw)
       break;
     }
     timeout++;
-  }
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
-    u8g2.clearBuffer();
-    u8g2.drawUTF8(0,12,"WiFi Connected");
-    u8g2.sendBuffer();
-    delay(1000);
   }
 }
 
@@ -278,7 +262,23 @@ void handleForm()
       server.send(200, "application/json", "{\"code\":0,\"msg\":\"Format Completed, Esp8266 Will Be Restart!\"}");
       delay(1000);
       ESP.restart();
-    }else
+    }else if (method =="screen")
+    {
+      if (screen_sleep)
+      {
+        u8g2.setPowerSave(0);
+        screen_sleep = 0;
+        server.send(200, "text/html", "");
+      }else
+      {
+        u8g2.setPowerSave(1);
+        screen_sleep = 1;
+        server.send(200, "text/html", "");
+      }
+    }else if(method == "md5")
+      {
+        server.send(200,"text/html",ESP.getSketchMD5());
+      }else
     {
       server.send(405, "text/html", "Method Not Allowed");
     }
@@ -413,21 +413,68 @@ void httpOTA(IPAddress updateAddr)
         break;
     }
 }
+void udpServer()
+{
+  int packetSize = udp_server.parsePacket();
+  char rxBuffer[1];
+  if (packetSize)
+  {
+    int n = udp_server.read(rxBuffer, 1);
+    Serial.println(n);
+    switch ((int)rxBuffer[0])
+    {
+    case 0x0:
+      for (size_t i = 0; i < 5; i++)
+      {
+        udp_server.beginPacket(udp_server.remoteIP(),udp_server.remotePort());
+        udp_server.write(0x1);
+        udp_server.endPacket();
+      }
+      break;
+    case 0x2:
+      udp_server.beginPacket(udp_server.remoteIP(),udp_server.remotePort());
+      udp_server.write(0x3);
+      udp_server.endPacket();
+      delay(500);
+      bNeedUpdate = true;
+    break;
+    default:
+      break;
+    }
+  }
+}
 void setup() {
-  Serial.begin(115200);
   u8g2.begin();
   u8g2.enableUTF8Print();
+  u8g2.setDrawColor(1);
+  Serial.begin(115200);
   LittleFS.begin();
   char wifi_ssid[32],wifi_pw[16];
   bool bssid = readConfig("/config.json", "wifi_ssid", wifi_ssid);
   bool bpass = readConfig("/config.json", "wifi_password", wifi_pw);
   bNeedinit = !(bssid && bpass);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
+  u8g2.drawStr(0,13,"Screen Is Online");
+  u8g2.sendBuffer();
+  delay(500);
+  u8g2.drawStr(0,26,"Serial Is Online");
+  u8g2.sendBuffer();
+  delay(500);
+  u8g2.drawStr(0,39,"LittleFS Is Online");
+  u8g2.sendBuffer();
+  delay(500);
   if(bNeedinit)
   {
     initdAP();
+    udp_server.begin(8266);
+    u8g2.drawStr(0,52,"AP Is Online");
+    u8g2.sendBuffer();
   }else
   {
     connectWiFi(wifi_ssid,wifi_pw);
+    udp_server.begin(8266);
+    u8g2.drawStr(0,52,"AP Is Online");
+    u8g2.sendBuffer();
   }
   localTime.tm_year = 0;
   getNtpTime();
@@ -437,6 +484,20 @@ void setup() {
   server.on("/form",handleForm);
   server.onNotFound(handleNotFound);
   server.begin();
+  delay(500);
+  u8g2.clearBuffer();
+  u8g2.drawStr(0,13,"Udp Is Online");
+  u8g2.sendBuffer();
+  delay(500);
+  u8g2.drawStr(0,26,"Http Is Online");
+  u8g2.sendBuffer();
+  delay(500);
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_luBIS14_te);
+  u8g2.drawStr(42,25,"Init");
+  u8g2.drawStr(19,50,"Success");
+  u8g2.sendBuffer();
+  delay(100);
 }
 
 void loop() {
@@ -453,15 +514,16 @@ void loop() {
   server.handleClient();
   while (bNeedUpdate)
   {
-    //httpOTA();
+    httpOTA(udp_server.remoteIP());
   }
-    if (millis() - dtime > 1000)
+  if (millis() - dtime > 1000)
   {
     dtime = millis();
     getLocalTime();
   }
   if (!bNeedinit)
   {
+    udpServer();
     drawWatch();
   }
   delay(1);

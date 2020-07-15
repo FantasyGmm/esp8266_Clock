@@ -50,7 +50,7 @@ Weather weather;
      SCL   ---  D1(GPIO5)
      SDA   ---  D2(GPIO4)
 */
-void  drawXBM(uint8_t width, uint8_t height, uint8_t *bmp)
+void drawXBM(uint8_t width, uint8_t height, uint8_t *bmp)
 {
   u8g2.setDrawColor(0);
   u8g2.setBitmapMode(false);
@@ -323,7 +323,7 @@ void handleNotFound()
   server.send(404, "text/html", message);
 }
 
-void getWeather()
+bool getWeather()
 {
   char appid[16];
   char appsecret[16];
@@ -335,7 +335,7 @@ void getWeather()
   if (!(readConfig("/config.json", "weather_appid", appid) && readConfig("/config.json", "weather_appsecret", appsecret)))
   {
     Serial.println("Weather read config error!");
-    return;
+    return false;
   }
   readConfig("/config.json", "weather_city", city);
   if(strlen(city) > 0)
@@ -354,9 +354,9 @@ void getWeather()
           if (JSON.typeof(jo) != "undefined")
           {
             if (jo.hasOwnProperty("errcode"))
-              return;
+              return false  ;
             if (jo["city"] == null || jo["wea"] == null || jo["tem"] == null)
-              return;
+              return false;
             strcpy(weather.city, jo["city"]);
             strcpy(weather.wea, jo["wea"]);
             strcpy(weather.tem, jo["tem"]);
@@ -371,13 +371,17 @@ void getWeather()
       else
       {
         Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+        return false;
       }
       http.end();
+      return true;
     } 
     else 
     {
       Serial.printf("[HTTP} Unable to connect\n");
+      return false;
     }
+    return false;
 }
 
 void getNtpTime()
@@ -507,8 +511,6 @@ void udpServer()
   char rxBuffer[1];
   if (packetSize)
   {
-    int n = udp_server.read(rxBuffer, 1);
-    Serial.println(n);
     switch ((int)rxBuffer[0])
     {
     case 0x0:
@@ -573,7 +575,7 @@ void setup() {
   server.on("/form",handleForm);
   server.onNotFound(handleNotFound);
   server.begin();
-  delay(500);
+  delay(800);
   u8g2.clearBuffer();
   u8g2.drawStr(0,13,"Udp Is Online");
   u8g2.sendBuffer();
@@ -590,7 +592,7 @@ void setup() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_luBIS14_te);
   u8g2.drawStr(0,25,"System Init");
-  u8g2.drawStr(19,50,"Success");
+  u8g2.drawStr(19,53,"Success");
   u8g2.sendBuffer();
   delay(800);
   if(bNeedinit)
@@ -604,35 +606,47 @@ void setup() {
 }
 
 void loop() {
-  if (localTime.tm_year < (2016 - 1900) && !bNeedinit)
+  udpServer();
+  server.handleClient();
+  if (!bNeedinit)
   {
-    if (millis() - otime > 5000)
+    bool isgetweather;
+    if (localTime.tm_year < (2016 - 1900) && !bNeedinit)
     {
-      otime = millis();
-      getNtpTime();
+      if (millis() - otime > 5000)
+      {
+        otime = millis();
+        getNtpTime();
+      }
+    }
+    while (bNeedUpdate)
+    {
+      httpOTA(udp_server.remoteIP());
+    }
+    if (millis() - dtime > 1000)
+    {
+      dtime = millis();
+      getLocalTime();
+    }
+      //drawWatch();
+    if (millis() - weather.time > 60000)
+    {
+      isgetweather =  getWeather();
+    }
+    if(isgetweather)
+    {
+      drawWeather();
+    }else
+    {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+    u8g2.drawUTF8(0,14,"获取天气失败");
+    u8g2.drawUTF8(0,30,"请检查网络连接");
+    u8g2.drawUTF8(0,46,"APPID APPSERCET");
+    u8g2.sendBuffer();
     }
   }
   if (bNeedinit)
     dnsServer.processNextRequest();
-  server.handleClient();
-  while (bNeedUpdate)
-  {
-    httpOTA(udp_server.remoteIP());
-  }
-  if (millis() - dtime > 1000)
-  {
-    dtime = millis();
-    getLocalTime();
-  }
-  if (millis() - weather.time > 60000)
-  {
-    getWeather();
-  }
-  if (!bNeedinit)
-  {
-    udpServer();
-    //drawWatch();
-    drawWeather();
-  }
   delay(1);
 }

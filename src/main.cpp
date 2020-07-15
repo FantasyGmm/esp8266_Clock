@@ -396,17 +396,20 @@ bool getLocalTime()
 
 void drawWeather()
 {
+  getWeather();
   u8g2.firstPage();
   u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
   do{
     
   }while (u8g2.nextPage());
+  u8g2.drawUTF8();
+  u8g2.sendBuffer();
 }
 
 void drawWatch()
 {
   u8g2.firstPage();
-  u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
   do{
     char *nowdate = new char[32];
     char *nowtime = new char[32];
@@ -416,32 +419,32 @@ void drawWatch()
     switch(localTime.tm_wday)
     {
       case 0:
-        u8g2.drawUTF8(74, 14, "星期日");
+        u8g2.drawUTF8(74, 50, "星期日");
       break;
       case 1:
-        u8g2.drawUTF8(74, 14, "星期一");
+        u8g2.drawUTF8(74, 50, "星期一");
       break;
       case 2:
-        u8g2.drawUTF8(74, 14, "星期二");
+        u8g2.drawUTF8(74, 50, "星期二");
       break;
       case 3:
-        u8g2.drawUTF8(74, 14, "星期三");
+        u8g2.drawUTF8(74, 50, "星期三");
       break;
       case 4:
-        u8g2.drawUTF8(74, 14, "星期四");
+        u8g2.drawUTF8(74, 50, "星期四");
       break;
       case 5:
-        u8g2.drawUTF8(74, 14, "星期五");
+        u8g2.drawUTF8(74, 50, "星期五");
       break;
       case 6:
-        u8g2.drawUTF8(74, 14, "星期六");
+        u8g2.drawUTF8(74, 50, "星期六");
       break;
     }
     //日期
-    u8g2.drawUTF8(0, 14, nowdate);
+    u8g2.drawUTF8(0, 50, nowdate);
     //时间
     u8g2.setFont(u8g2_font_fub20_tn);
-    u8g2.drawStr(-5, 50, nowtime);
+    u8g2.drawStr(-5, 36, nowtime);
     u8g2.sendBuffer();
     //释放资源
     delete[] nowdate;
@@ -555,6 +558,7 @@ void setup() {
   }
   localTime.tm_year = 0;
   getNtpTime();
+  getWeather();
   server.on("/", handleRoot);  
   server.on("/init",handleinit);
   server.on("/api",handleAPI);
@@ -569,12 +573,18 @@ void setup() {
   u8g2.drawStr(0,26,"Http Is Online");
   u8g2.sendBuffer();
   delay(500);
+  u8g2.drawStr(0,39,"Syncing Time");
+  u8g2.sendBuffer();
+  delay(500);
+  u8g2.drawStr(0,52,"Syncing Weather");
+  u8g2.sendBuffer();
+  delay(500);
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_luBIS14_te);
   u8g2.drawStr(42,25,"Init");
   u8g2.drawStr(19,50,"Success");
   u8g2.sendBuffer();
-  delay(100);
+  delay(1000);
 }
 
 void loop() {

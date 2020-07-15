@@ -32,12 +32,16 @@ struct Weather
   char city[20];
   char wea[20];
   char tem[4];
+  char dtem[4];
+  char ntem[4];
+  char win[8];
+  char air[4];
   Weather()
   {
     this->time = 0;
   }
-
 };
+Weather weather;
 /*
 //I2C
      OLED  ---  ESP8266
@@ -328,7 +332,6 @@ void getWeather()
   WiFiClient client;
   HTTPClient http;
   String json = "";
-  Weather weather;
   if (!(readConfig("/config.json", "weather_appid", appid) && readConfig("/config.json", "weather_appsecret", appsecret)))
   {
     Serial.println("Weather read config error!");
@@ -339,14 +342,11 @@ void getWeather()
     sprintf(weatherUrl, "http://tianqiapi.com/api?version=v6&appid=%s&appsecret=%s&city=%s", appid, appsecret, city);
   else
     sprintf(weatherUrl, "http://tianqiapi.com/api?version=v6&appid=%s&appsecret=%s", appid, appsecret);
-  Serial.print("[HTTP] begin...\n");
     if (http.begin(client, weatherUrl)) 
     {
-      Serial.print("[HTTP] GET...\n");
       int httpCode = http.GET();
       if (httpCode > 0)
       {
-        Serial.printf("[HTTP] GET... code: %d\n", httpCode);
         if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
         {
           json = http.getString();
@@ -360,6 +360,10 @@ void getWeather()
             strcpy(weather.city, jo["city"]);
             strcpy(weather.wea, jo["wea"]);
             strcpy(weather.tem, jo["tem"]);
+            strcpy(weather.dtem, jo["tem_day"]);
+            strcpy(weather.ntem, jo["tem_night"]);
+            strcpy(weather.win, jo["win"]);
+            strcpy(weather.air, jo["air"]);
             weather.time = millis();
           }
         }
@@ -396,14 +400,18 @@ bool getLocalTime()
 
 void drawWeather()
 {
-  getWeather();
   u8g2.firstPage();
-  u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
   do{
-    
+    u8g2.drawUTF8(14,12,weather.city);
+    u8g2.drawUTF8(0,25,"现在温度:");
+    u8g2.drawStr(50,25,weather.tem);
+    u8g2.drawUTF8(0,38,"白天温度:");
+    u8g2.drawStr(0,38,weather.dtem);
+    u8g2.drawUTF8(0,51,"夜晚温度:");
+    u8g2.drawStr(0,51,weather.ntem);
+    u8g2.sendBuffer();
   }while (u8g2.nextPage());
-  u8g2.drawUTF8();
-  u8g2.sendBuffer();
 }
 
 void drawWatch()
@@ -441,7 +449,7 @@ void drawWatch()
       break;
     }
     //日期
-    u8g2.drawUTF8(0, 50, nowdate);
+    u8g2.drawUTF8(5, 50, nowdate);
     //时间
     u8g2.setFont(u8g2_font_fub20_tn);
     u8g2.drawStr(-5, 36, nowtime);
@@ -553,7 +561,7 @@ void setup() {
   {
     connectWiFi(wifi_ssid,wifi_pw);
     udp_server.begin(8266);
-    u8g2.drawStr(0,52,"AP Is Online");
+    u8g2.drawStr(0,52,"WiFi Is Online");
     u8g2.sendBuffer();
   }
   localTime.tm_year = 0;
@@ -581,10 +589,18 @@ void setup() {
   delay(500);
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_luBIS14_te);
-  u8g2.drawStr(42,25,"Init");
+  u8g2.drawStr(0,25,"System Init");
   u8g2.drawStr(19,50,"Success");
   u8g2.sendBuffer();
-  delay(1000);
+  delay(800);
+  if(bNeedinit)
+  {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+    u8g2.drawUTF8(0,20,"请链接热点来配置AP:");
+    u8g2.drawUTF8(0,45,("ESP8266_"+(String)ESP.getChipId()).c_str());
+    u8g2.sendBuffer();
+  }
 }
 
 void loop() {
@@ -608,11 +624,15 @@ void loop() {
     dtime = millis();
     getLocalTime();
   }
+  if (millis() - weather.time > 60000)
+  {
+    getWeather();
+  }
   if (!bNeedinit)
   {
     udpServer();
-    drawWatch();
+    //drawWatch();
+    drawWeather();
   }
-  getWeather();
   delay(1);
 }

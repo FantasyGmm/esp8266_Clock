@@ -22,6 +22,7 @@ unsigned long dtime = 0;
 struct tm localTime;
 bool bNeedUpdate = false;
 bool bNeedinit = true;
+bool isgetweather = false;
 struct WifiData
 {
     String ssid;
@@ -32,9 +33,7 @@ struct Weather
   char city[20];
   char wea[20];
   char tem[4];
-  char dtem[4];
-  char ntem[4];
-  char win[8];
+  char win[16];
   char air[4];
   Weather()
   {
@@ -342,46 +341,45 @@ bool getWeather()
     sprintf(weatherUrl, "http://tianqiapi.com/api?version=v6&appid=%s&appsecret=%s&city=%s", appid, appsecret, city);
   else
     sprintf(weatherUrl, "http://tianqiapi.com/api?version=v6&appid=%s&appsecret=%s", appid, appsecret);
-    if (http.begin(client, weatherUrl)) 
+  if (http.begin(client, weatherUrl)) 
+  {
+    int httpCode = http.GET();
+    Serial.println(httpCode);
+    if (httpCode > 0)
     {
-      int httpCode = http.GET();
-      if (httpCode > 0)
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
       {
-        if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
+        json = http.getString();
+        JSONVar jo = JSON.parse(json);
+        if (JSON.typeof(jo) != "undefined")
         {
-          json = http.getString();
-          JSONVar jo = JSON.parse(json);
-          if (JSON.typeof(jo) != "undefined")
-          {
-            if (jo.hasOwnProperty("errcode"))
-              return false  ;
-            if (jo["city"] == null || jo["wea"] == null || jo["tem"] == null)
-              return false;
-            strcpy(weather.city, jo["city"]);
-            strcpy(weather.wea, jo["wea"]);
-            strcpy(weather.tem, jo["tem"]);
-            strcpy(weather.dtem, jo["tem_day"]);
-            strcpy(weather.ntem, jo["tem_night"]);
-            strcpy(weather.win, jo["win"]);
-            strcpy(weather.air, jo["air"]);
-            weather.time = millis();
-          }
+          if (jo.hasOwnProperty("errcode"))
+            return false  ;
+          if (jo["city"] == null || jo["wea"] == null || jo["tem"] == null)
+            return false;
+          strcpy(weather.city, jo["city"]);
+          strcpy(weather.wea, jo["wea"]);
+          strcpy(weather.tem, jo["tem"]);
+          strcpy(weather.win, jo["win"]);
+          strcpy(weather.air, jo["air"]);
+          weather.time = millis();
         }
       }
-      else
-      {
-        Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-        return false;
-      }
-      http.end();
-      return true;
-    } 
-    else 
+    }
+    else
     {
-      Serial.printf("[HTTP} Unable to connect\n");
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
       return false;
     }
+    http.end();
+    return true;
+  } 
+  else 
+  {
+    Serial.printf("[HTTP} Unable to connect\n");
     return false;
+  }
+  return false;
 }
 
 void getNtpTime()
@@ -405,15 +403,15 @@ bool getLocalTime()
 void drawWeather()
 {
   u8g2.firstPage();
-  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312b);
   do{
-    u8g2.drawUTF8(14,12,weather.city);
-    u8g2.drawUTF8(0,25,"现在温度:");
-    u8g2.drawStr(50,25,weather.tem);
-    u8g2.drawUTF8(0,38,"白天温度:");
-    u8g2.drawStr(0,38,weather.dtem);
-    u8g2.drawUTF8(0,51,"夜晚温度:");
-    u8g2.drawStr(0,51,weather.ntem);
+    u8g2.drawUTF8(0,12,weather.city);
+    u8g2.drawUTF8(0,25,"温度:");
+    u8g2.drawStr(30,25,weather.tem);
+    u8g2.drawUTF8(0,38,"风力:");
+    u8g2.drawStr(30,38,weather.win);
+    u8g2.drawUTF8(0,51,"空气:");
+    u8g2.drawStr(30,51,weather.air);
     u8g2.sendBuffer();
   }while (u8g2.nextPage());
 }
@@ -495,9 +493,11 @@ void httpOTA(IPAddress updateAddr)
     switch (ret) 
     {
       case HTTP_UPDATE_FAILED:
+        bNeedUpdate = false;
         Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
         break;
       case HTTP_UPDATE_NO_UPDATES:
+        bNeedUpdate = false;
         Serial.println("HTTP_UPDATE_NO_UPDATES");
         break;
       case HTTP_UPDATE_OK:
@@ -509,6 +509,7 @@ void udpServer()
 {
   int packetSize = udp_server.parsePacket();
   char rxBuffer[1];
+  udp_server.read(rxBuffer, 1);
   if (packetSize)
   {
     switch ((int)rxBuffer[0])
@@ -525,18 +526,21 @@ void udpServer()
       udp_server.beginPacket(udp_server.remoteIP(),udp_server.remotePort());
       udp_server.write(0x3);
       udp_server.endPacket();
-      delay(500);
       bNeedUpdate = true;
-    break;
+      break;
     default:
       break;
     }
   }
+
+
 }
 void setup() {
   u8g2.begin();
   u8g2.enableUTF8Print();
   u8g2.setDrawColor(1);
+  u8g2.clearBuffer();
+  u8g2.sendBuffer();
   Serial.begin(115200);
   LittleFS.begin();
   char wifi_ssid[32],wifi_pw[16];
@@ -566,9 +570,6 @@ void setup() {
     u8g2.drawStr(0,52,"WiFi Is Online");
     u8g2.sendBuffer();
   }
-  localTime.tm_year = 0;
-  getNtpTime();
-  getWeather();
   server.on("/", handleRoot);  
   server.on("/init",handleinit);
   server.on("/api",handleAPI);
@@ -585,9 +586,13 @@ void setup() {
   delay(500);
   u8g2.drawStr(0,39,"Syncing Time");
   u8g2.sendBuffer();
+  localTime.tm_year = 0;
+  getNtpTime();
   delay(500);
   u8g2.drawStr(0,52,"Syncing Weather");
   u8g2.sendBuffer();
+  isgetweather =  getWeather();
+  Serial.println(isgetweather);
   delay(500);
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_luBIS14_te);
@@ -608,9 +613,14 @@ void setup() {
 void loop() {
   udpServer();
   server.handleClient();
+  while(bNeedUpdate)
+  {
+    delay(1000);
+    httpOTA(udp_server.remoteIP());
+    Serial.println(udp_server.remoteIP());
+  }
   if (!bNeedinit)
   {
-    bool isgetweather;
     if (localTime.tm_year < (2016 - 1900) && !bNeedinit)
     {
       if (millis() - otime > 5000)
@@ -619,31 +629,29 @@ void loop() {
         getNtpTime();
       }
     }
-    while (bNeedUpdate)
-    {
-      httpOTA(udp_server.remoteIP());
-    }
     if (millis() - dtime > 1000)
     {
       dtime = millis();
       getLocalTime();
     }
-      //drawWatch();
+    //drawWatch();
+   drawWeather();
     if (millis() - weather.time > 60000)
     {
       isgetweather =  getWeather();
+      if(isgetweather)
+      {
+        drawWeather();
+      }
     }
-    if(isgetweather)
+    if(!isgetweather && !bNeedinit)
     {
-      drawWeather();
-    }else
-    {
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
-    u8g2.drawUTF8(0,14,"获取天气失败");
-    u8g2.drawUTF8(0,30,"请检查网络连接");
-    u8g2.drawUTF8(0,46,"APPID APPSERCET");
-    u8g2.sendBuffer();
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+      u8g2.drawUTF8(0,14,"获取天气失败");
+      u8g2.drawUTF8(0,30,"请检查网络连接");
+      u8g2.drawUTF8(0,46,"APPID APPSERCET");
+      u8g2.sendBuffer();
     }
   }
   if (bNeedinit)

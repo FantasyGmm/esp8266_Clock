@@ -651,16 +651,19 @@ void loop() {
         getNtpTime();
       }
     }
-    if (millis() - dtime > 1000)
+    if (millis() - dtime > 5000)
     {
       dtime = millis();
       getLocalTime();
     }
     drawWatch();
    //drawWeather();
-    if (millis() - weather.time > 60000)
+    if (millis() - weather.time > 1800000)
     {
       isgetweather =  getWeather();
+    }
+    if (millis() - weather.time > 60000)
+    {
       if(isgetweather)
       {
         drawWeather();

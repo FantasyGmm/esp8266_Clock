@@ -4,6 +4,7 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <html.h>
+#include <wea_img.h>
 #include <Arduino_JSON.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
@@ -32,9 +33,10 @@ struct Weather
   ulong time;
   char city[20];
   char wea[20];
-  char tem[4];
+  char tem[3];
   char win[16];
-  char air[4];
+  char air[3];
+  char wim[8];
   Weather()
   {
     this->time = 0;
@@ -60,7 +62,7 @@ void drawXBM(uint8_t width, uint8_t height, uint8_t *bmp)
 
 void drawProgress(int progress, String caption)
 {
-  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312);
   u8g2.setDrawColor(1);
   u8g2.firstPage();
   do
@@ -85,7 +87,7 @@ bool readConfig(String path, String key, char* value)
   }
   if (!jo.hasOwnProperty(key))
   {
-    Serial.printf("Failed to Read Config Key:%s", key.c_str());
+    //Serial.printf("Failed to Read Config Key:%s", key.c_str());
     return false;
   }
   strcpy(value, jo[key]);
@@ -333,7 +335,7 @@ bool getWeather()
   String json = "";
   if (!(readConfig("/config.json", "weather_appid", appid) && readConfig("/config.json", "weather_appsecret", appsecret)))
   {
-    Serial.println("Weather read config error!");
+    //Serial.println("Weather read config error!");
     return false;
   }
   readConfig("/config.json", "weather_city", city);
@@ -344,7 +346,7 @@ bool getWeather()
   if (http.begin(client, weatherUrl)) 
   {
     int httpCode = http.GET();
-    Serial.println(httpCode);
+    //Serial.println(httpCode);
     if (httpCode > 0)
     {
       if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
@@ -360,15 +362,16 @@ bool getWeather()
           strcpy(weather.city, jo["city"]);
           strcpy(weather.wea, jo["wea"]);
           strcpy(weather.tem, jo["tem"]);
-          strcpy(weather.win, jo["win"]);
+          strcpy(weather.win, jo["win_speed"]);
           strcpy(weather.air, jo["air"]);
+          strcpy(weather.wim, jo["wea_img"]);
           weather.time = millis();
         }
       }
     }
     else
     {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      //Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
       return false;
     }
     http.end();
@@ -376,7 +379,7 @@ bool getWeather()
   } 
   else 
   {
-    Serial.printf("[HTTP} Unable to connect\n");
+    //Serial.printf("[HTTP} Unable to connect\n");
     return false;
   }
   return false;
@@ -403,15 +406,38 @@ bool getLocalTime()
 void drawWeather()
 {
   u8g2.firstPage();
-  u8g2.setFont(u8g2_font_wqy12_t_gb2312b);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312);
   do{
-    u8g2.drawUTF8(0,12,weather.city);
-    u8g2.drawUTF8(0,25,"温度:");
-    u8g2.drawStr(30,25,weather.tem);
-    u8g2.drawUTF8(0,38,"风力:");
-    u8g2.drawStr(30,38,weather.win);
-    u8g2.drawUTF8(0,51,"空气:");
-    u8g2.drawStr(30,51,weather.air);
+    u8g2.drawUTF8(0,14,weather.city);
+    u8g2.drawUTF8(0,29,"温度:");
+    u8g2.setFont(u8g2_font_7x14B_tn);
+    u8g2.drawStr(30,29,weather.tem);
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+    u8g2.drawUTF8(0,42,"风力:");
+    u8g2.setFont(u8g2_font_7x14B_tn);
+    u8g2.drawStr(30,42,weather.win);
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+    u8g2.drawUTF8(0,55,"空气:");
+    u8g2.setFont(u8g2_font_7x14B_tn);
+    u8g2.drawStr(30,55,weather.air);
+    if (weather.wim == "xue")
+      u8g2.drawXBM(64,0,64,64,xue);
+    if (weather.wim == "lei")
+      u8g2.drawXBM(64,0,64,64,lei);
+    if (weather.wim == "shachen")
+      u8g2.drawXBM(64,0,64,64,shachen);
+    if (weather.wim == "wu")
+      u8g2.drawXBM(64,0,64,64,wu);
+    if (weather.wim == "bingbao")
+      u8g2.drawXBM(64,0,64,64,bingbao);
+    if (weather.wim == "yun")
+      u8g2.drawXBM(64,0,64,64,yun);
+    if (weather.wim == "yu")
+      u8g2.drawXBM(64,0,64,64,yu);
+    if (weather.wim == "yin")
+      u8g2.drawXBM(64,0,64,64,yin);
+    if (weather.wim == "qing")
+      u8g2.drawXBM(64,0,64,64,qing);
     u8g2.sendBuffer();
   }while (u8g2.nextPage());
 }
@@ -419,7 +445,7 @@ void drawWeather()
 void drawWatch()
 {
   u8g2.firstPage();
-  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312);
   do{
     char *nowdate = new char[32];
     char *nowtime = new char[32];
@@ -464,12 +490,12 @@ void drawWatch()
 
 void update_started()
 {
-  Serial.println("CALLBACK:  HTTP update process started");
+  //Serial.println("CALLBACK:  HTTP update process started");
 }
 
 void update_finished()
 {
-  Serial.println("CALLBACK:  HTTP update process finished");
+  //Serial.println("CALLBACK:  HTTP update process finished");
 }
 
 void update_progress(int cur, int total)
@@ -480,7 +506,7 @@ void update_progress(int cur, int total)
 
 void update_error(int err)
 {
-  Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
+  //Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
 }
 void httpOTA(IPAddress updateAddr)
 {
@@ -494,14 +520,14 @@ void httpOTA(IPAddress updateAddr)
     {
       case HTTP_UPDATE_FAILED:
         bNeedUpdate = false;
-        Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+        //Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
         break;
       case HTTP_UPDATE_NO_UPDATES:
         bNeedUpdate = false;
-        Serial.println("HTTP_UPDATE_NO_UPDATES");
+        //Serial.println("HTTP_UPDATE_NO_UPDATES");
         break;
       case HTTP_UPDATE_OK:
-        Serial.println("HTTP_UPDATE_OK");
+        //Serial.println("HTTP_UPDATE_OK");
         break;
     }
 }
@@ -547,7 +573,7 @@ void setup() {
   bool bssid = readConfig("/config.json", "wifi_ssid", wifi_ssid);
   bool bpass = readConfig("/config.json", "wifi_password", wifi_pw);
   bNeedinit = !(bssid && bpass);
-  u8g2.setFont(u8g2_font_wqy12_t_gb2312a);
+  u8g2.setFont(u8g2_font_wqy12_t_gb2312);
   u8g2.drawStr(0,13,"Screen Is Online");
   u8g2.sendBuffer();
   delay(500);
@@ -592,7 +618,7 @@ void setup() {
   u8g2.drawStr(0,52,"Syncing Weather");
   u8g2.sendBuffer();
   isgetweather =  getWeather();
-  Serial.println(isgetweather);
+  //Serial.println(isgetweather);
   delay(500);
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_luBIS14_te);
@@ -603,7 +629,7 @@ void setup() {
   if(bNeedinit)
   {
     u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+    u8g2.setFont(u8g2_font_wqy14_t_gb2312);
     u8g2.drawUTF8(0,20,"请链接热点来配置AP:");
     u8g2.drawUTF8(0,45,("ESP8266_"+(String)ESP.getChipId()).c_str());
     u8g2.sendBuffer();
@@ -617,7 +643,7 @@ void loop() {
   {
     delay(1000);
     httpOTA(udp_server.remoteIP());
-    Serial.println(udp_server.remoteIP());
+    //Serial.println(udp_server.remoteIP());
   }
   if (!bNeedinit)
   {
@@ -647,7 +673,7 @@ void loop() {
     if(!isgetweather && !bNeedinit)
     {
       u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_wqy14_t_gb2312a);
+      u8g2.setFont(u8g2_font_wqy14_t_gb2312);
       u8g2.drawUTF8(0,14,"获取天气失败");
       u8g2.drawUTF8(0,30,"请检查网络连接");
       u8g2.drawUTF8(0,46,"APPID APPSERCET");

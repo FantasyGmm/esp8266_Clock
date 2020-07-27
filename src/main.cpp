@@ -643,7 +643,7 @@ void loop() {
   }
   if (!bNeedinit)
   {
-    if (localTime.tm_year < (2016 - 1900) && !bNeedinit)
+    if (localTime.tm_year < (2016 - 1900))
     {
       if (millis() - otime > 5000)
       {
@@ -651,7 +651,7 @@ void loop() {
         getNtpTime();
       }
     }
-    if (millis() - dtime > 5000)
+    if (millis() - dtime > 1000)
     {
       dtime = millis();
       getLocalTime();

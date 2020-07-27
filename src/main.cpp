@@ -410,36 +410,32 @@ void drawWeather()
   do{
     u8g2.drawUTF8(0,14,weather.city);
     u8g2.drawUTF8(0,29,"温度:");
-    u8g2.setFont(u8g2_font_7x14B_tn);
     u8g2.drawStr(30,29,weather.tem);
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);
     u8g2.drawUTF8(0,42,"风力:");
-    u8g2.setFont(u8g2_font_7x14B_tn);
     u8g2.drawStr(30,42,weather.win);
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);
     u8g2.drawUTF8(0,55,"空气:");
-    u8g2.setFont(u8g2_font_7x14B_tn);
     u8g2.drawStr(30,55,weather.air);
-    if (weather.wim == "xue")
+    if (strncmp(weather.wim,"xue",8) == 0)
       u8g2.drawXBM(64,0,64,64,xue);
-    if (weather.wim == "lei")
+    if (strncmp(weather.wim,"lei",8) == 0)
       u8g2.drawXBM(64,0,64,64,lei);
-    if (weather.wim == "shachen")
+    if (strncmp(weather.wim,"shachen",8) == 0)
       u8g2.drawXBM(64,0,64,64,shachen);
-    if (weather.wim == "wu")
+    if (strncmp(weather.wim,"wu",8) == 0)
       u8g2.drawXBM(64,0,64,64,wu);
-    if (weather.wim == "bingbao")
+    if (strncmp(weather.wim,"bingbao",8) == 0)
       u8g2.drawXBM(64,0,64,64,bingbao);
-    if (weather.wim == "yun")
+    if (strncmp(weather.wim,"yun",8) == 0)
       u8g2.drawXBM(64,0,64,64,yun);
-    if (weather.wim == "yu")
+    if (strncmp(weather.wim,"yu",8) == 0)
       u8g2.drawXBM(64,0,64,64,yu);
-    if (weather.wim == "yin")
+    if (strncmp(weather.wim,"yin",8) == 0)
       u8g2.drawXBM(64,0,64,64,yin);
-    if (weather.wim == "qing")
+    if (strncmp(weather.wim,"qing",8) == 0)
       u8g2.drawXBM(64,0,64,64,qing);
     u8g2.sendBuffer();
   }while (u8g2.nextPage());
+  delay(60000);
 }
 
 void drawWatch()
@@ -660,8 +656,8 @@ void loop() {
       dtime = millis();
       getLocalTime();
     }
-    //drawWatch();
-   drawWeather();
+    drawWatch();
+   //drawWeather();
     if (millis() - weather.time > 60000)
     {
       isgetweather =  getWeather();

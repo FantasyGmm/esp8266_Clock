@@ -656,8 +656,8 @@ void loop() {
       dtime = millis();
       getLocalTime();
     }
-    //drawWatch();
-   drawWeather();
+    drawWatch();
+   //drawWeather();
     if (millis() - weather.time > 60000)
     {
       isgetweather =  getWeather();

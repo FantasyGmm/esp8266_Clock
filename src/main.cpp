@@ -34,7 +34,7 @@ struct Weather
   char city[20];
   char wea[20];
   char tem[3];
-  char win[16];
+  char hum[5];
   char air[3];
   char wim[8];
   Weather()
@@ -362,7 +362,7 @@ bool getWeather()
           strcpy(weather.city, jo["city"]);
           strcpy(weather.wea, jo["wea"]);
           strcpy(weather.tem, jo["tem"]);
-          strcpy(weather.win, jo["win_speed"]);
+          strcpy(weather.hum, jo["humidity"]);
           strcpy(weather.air, jo["air"]);
           strcpy(weather.wim, jo["wea_img"]);
           weather.time = millis();
@@ -411,8 +411,8 @@ void drawWeather()
     u8g2.drawUTF8(0,14,weather.city);
     u8g2.drawUTF8(0,29,"温度:");
     u8g2.drawStr(30,29,weather.tem);
-    u8g2.drawUTF8(0,42,"风力:");
-    u8g2.drawStr(30,42,weather.win);
+    u8g2.drawUTF8(0,42,"湿度:");
+    u8g2.drawStr(30,42,weather.hum);
     u8g2.drawUTF8(0,55,"空气:");
     u8g2.drawStr(30,55,weather.air);
     if (strncmp(weather.wim,"xue",8) == 0)
@@ -656,8 +656,8 @@ void loop() {
       dtime = millis();
       getLocalTime();
     }
-    drawWatch();
-   //drawWeather();
+    //drawWatch();
+   drawWeather();
     if (millis() - weather.time > 60000)
     {
       isgetweather =  getWeather();

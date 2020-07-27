@@ -435,7 +435,7 @@ void drawWeather()
       u8g2.drawXBM(64,0,64,64,qing);
     u8g2.sendBuffer();
   }while (u8g2.nextPage());
-  delay(60000);
+  delay(30000);
 }
 
 void drawWatch()
@@ -658,11 +658,11 @@ void loop() {
     }
     drawWatch();
    //drawWeather();
-    if (millis() - weather.time > 1800000)
+    if (millis() - weather.time > 100000)
     {
       isgetweather =  getWeather();
     }
-    if (millis() - weather.time > 60000)
+    if (millis() - weather.time > 10000)
     {
       if(isgetweather)
       {
